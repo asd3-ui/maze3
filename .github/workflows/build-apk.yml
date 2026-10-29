@@ -20,7 +20,7 @@ jobs:
           python-version: "3.11"
           cache: pip
           cache-dependency-path: requirements.txt
-      - name: Install dependencies
+      - name: Install desktop dependencies
         run: |
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt
@@ -28,11 +28,16 @@ jobs:
         run: python -m compileall -q main.py entities.py maze_generator.py
       - name: Test maze generation and connectivity
         run: python -m unittest discover -s tests -v
+      - name: Verify Android pygame recipe is present
+        run: |
+          test -f p4a-recipes/pygame/__init__.py
+          grep -q 'version = "2.6.1"' p4a-recipes/pygame/__init__.py
+          grep -q 'p4a.local_recipes = ./p4a-recipes' buildozer.spec
 
   android:
     needs: validate
     runs-on: ubuntu-22.04
-    timeout-minutes: 90
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -53,7 +58,7 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt
           python -m pip install "buildozer==1.5.0" "Cython==0.29.36"
-      - name: Build debug APK
+      - name: Build debug APK with local pygame 2.6.1 recipe
         env:
           CI: "1"
         run: |
