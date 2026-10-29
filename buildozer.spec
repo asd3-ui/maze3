@@ -6,7 +6,6 @@ source.dir = .
 source.include_exts = py,png,jpg,kv,atlas,json
 version = 1.0.0
 requirements = python3,pygame,numpy
-icon.filename = %(source.dir)s/icon.png
 orientation = landscape
 fullscreen = 1
 android.permissions = INTERNET, WRITE_EXTERNAL_STORAGE, READ_EXTERNAL_STORAGE
