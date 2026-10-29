@@ -1,69 +1,65 @@
-name: CI/CD Build Android APK
+name: Build and validate Maze 3D
 
 on:
   push:
-    branches: ["main"]
+    branches: [main, mobile-ready-maze3]
   pull_request:
-    branches: ["main"]
+    branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
-  build:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: requirements.txt
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+      - name: Compile Python sources
+        run: python -m compileall -q main.py entities.py maze_generator.py
+
+  android:
+    needs: validate
     runs-on: ubuntu-22.04
     timeout-minutes: 90
     steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
-
-      - name: Set up Java
-        uses: actions/setup-java@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: "17"
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
           python-version: "3.10"
-          cache: "pip"
+          cache: pip
           cache-dependency-path: requirements.txt
-
-      - name: Verify Build Toolchain
-        run: |
-          java -version
-          echo "JAVA_HOME=$JAVA_HOME"
-          python --version
-          python -m pip --version
-
-      - name: Install Android Build Dependencies
+      - name: Install Android build dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y git zip unzip autoconf libtool pkg-config zlib1g-dev libncurses5-dev libssl-dev cmake libffi-dev libgdbm-dev libsqlite3-dev libbz2-dev
-
       - name: Install Buildozer
         run: |
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt
-          python -m pip install --user "buildozer==1.5.0" "Cython==0.29.36"
-          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-
-      # Avoid piping yes into Buildozer: early pipe closure can turn a successful build into a broken-pipe failure.
-      - name: Build with Buildozer
+          python -m pip install "buildozer==1.5.0" "Cython==0.29.36"
+      - name: Build debug APK
         env:
           CI: "1"
         run: |
-          set -e
-          "$HOME/.local/bin/buildozer" -v android debug
-          echo "Checking generated APK..."
-          find bin -maxdepth 1 -type f -name '*.apk' -size +0c -print
+          buildozer -v android debug
           test -n "$(find bin -maxdepth 1 -type f -name '*.apk' -size +0c -print -quit)"
-
-      - name: Upload APK Artifact
+      - uses: actions/upload-artifact@v4
         if: success()
-        uses: actions/upload-artifact@v4
         with:
-          name: dungeon-3d-crawler-apk
+          name: maze3d-android-apk
           path: bin/*.apk
           if-no-files-found: error
