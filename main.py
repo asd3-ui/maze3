@@ -3,6 +3,13 @@ import sys
 import json
 import os
 import math
+
+try:
+    import android
+    android.init()
+except ImportError:
+    pass
+
 from maze_generator import generate_dungeon
 from entities import Player3D, Enemy3D, VirtualJoystick
 
@@ -10,7 +17,6 @@ pygame.init()
 SCREEN_WIDTH = 1280
 SCREEN_HEIGHT = 720
 
-# تحسين أداء الهاتف: 120 شعاعاً (بدلاً من 240) يعطي أداءً ممتازاً ومستقراً جداً وبدون لاغ
 FOV = math.pi / 3       
 HALF_FOV = FOV / 2
 NUM_RAYS = 120          
@@ -42,7 +48,6 @@ def save_high_score(score):
         except: pass
 
 def render_3d_world(player, dungeon_map, enemies):
-    # رسم الخلفية والسقف والأرضية
     pygame.draw.rect(screen, COLOR_CEILING, (0, 0, SCREEN_WIDTH, SCREEN_HEIGHT // 2))
     pygame.draw.rect(screen, COLOR_FLOOR, (0, SCREEN_HEIGHT // 2, SCREEN_WIDTH, SCREEN_HEIGHT // 2))
     
@@ -58,21 +63,17 @@ def render_3d_world(player, dungeon_map, enemies):
             target_x = player.x + cos_a * dist
             target_y = player.y + sin_a * dist
             
-            # فحص حدود الخريطة لمنع تداخل العمليات والمحافظة على الذاكرة
             if 0 <= int(target_y) < len(dungeon_map) and 0 <= int(target_x) < len(dungeon_map[0]):
                 if dungeon_map[int(target_y)][int(target_x)] == 1:
                     dist *= math.cos(player.angle - angle)
                     wall_height = min(SCREEN_HEIGHT, int(SCREEN_HEIGHT / (dist + 0.0001)))
-                    
                     shade = 255 / (1 + dist * dist * 0.3)
                     color = (int(shade * 0.35), int(shade * 0.4), int(shade * 0.45))
-                    
                     pygame.draw.rect(screen, color, (ray * SCALE, (SCREEN_HEIGHT - wall_height) // 2, SCALE, wall_height))
                     break
             else:
                 break
 
-    # رندرة الخصوم والمطاردين
     for enemy in enemies:
         ex = enemy.x - player.x
         ey = enemy.y - player.y
@@ -91,25 +92,18 @@ def render_3d_world(player, dungeon_map, enemies):
                 pygame.draw.circle(screen, e_color, (screen_x, SCREEN_HEIGHT // 2), sprite_height // 5)
 
 def draw_custom_hud(time_alive, is_game_over):
-    """واجهة مستخدم هندسية بديلة عن الخطوط لمنع انهيار تطبيق الأندرويد"""
     if not is_game_over:
-        # رسم شريط علوي يوضح الوقت بالثواني عبر مربعات رسومية مبسطة
         pygame.draw.rect(screen, (44, 62, 80), (20, 20, 240, 45), border_radius=8)
         pygame.draw.rect(screen, COLOR_ACCENT, (25, 25, min(230, time_alive * 4), 35), border_radius=5)
     else:
-        # شاشة الموت الحجرية الحمراء
         overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
-        overlay.fill((192, 57, 43, 200)) # غطاء أحمر شفاف للموت
+        overlay.fill((192, 57, 43, 200)) 
         screen.blit(overlay, (0,0))
-        # رسم جمجمة/شكل هندسي تحذيري في المنتصف
         pygame.draw.rect(screen, (255, 255, 255), (SCREEN_WIDTH//2 - 50, SCREEN_HEIGHT//2 - 50, 100, 100), border_radius=20)
 
 def main_menu():
-    # لا تنشئ ملفات أثناء التشغيل على أندرويد؛ الأيقونة تخص إعدادات البناء فقط.
     while True:
         screen.fill(COLOR_BG)
-        
-        # زر مستطيل كبير لبدء اللعبة الهندسية (الدخول للدهليز)
         btn_start = pygame.Rect(SCREEN_WIDTH//2 - 150, SCREEN_HEIGHT//2 - 40, 300, 80)
         pygame.draw.rect(screen, (230, 126, 34), btn_start, border_radius=15)
         pygame.draw.polygon(screen, (255,255,255), [(SCREEN_WIDTH//2 - 15, SCREEN_HEIGHT//2 - 20), (SCREEN_WIDTH//2 - 15, SCREEN_HEIGHT//2 + 20), (SCREEN_WIDTH//2 + 20, SCREEN_HEIGHT//2)])
@@ -123,19 +117,20 @@ def main_menu():
                     pygame.quit()
                     sys.exit()
             if event.type == pygame.MOUSEBUTTONDOWN:
-                if btn_start.collidepoint(pygame.mouse.get_pos()): return
+                if btn_start.collidepoint(event.pos): return
 
         pygame.display.flip()
         clock.tick(60)
 
 def game_loop():
-    # تصغير حجم الخريطة إلى 20×20 لضمان أداء مستقر وسلس وبدون استهلاك للذاكرة على الهاتف
     dungeon_map, spawn_pos, chests_locs, _ = generate_dungeon(20, 20)
     player = Player3D(spawn_pos[0], spawn_pos[1])
     
-    enemies = [
-        Enemy3D(chests_locs[0][0], chests_locs[0][1], 0.035)
-    ]
+    enemies = []
+    if chests_locs:
+        enemies.append(Enemy3D(chests_locs[0][0], chests_locs[0][1], 0.035))
+    else:
+        enemies.append(Enemy3D(spawn_pos[0] + 2, spawn_pos[1] + 2, 0.035))
     
     joystick = VirtualJoystick(SCREEN_WIDTH, SCREEN_HEIGHT)
     start_ticks = pygame.time.get_ticks()
@@ -144,10 +139,11 @@ def game_loop():
 
     while running:
         for event in pygame.event.get():
-            if event.type == pygame.QUIT: running = False
+            if event.type == pygame.QUIT: 
+                running = False
             elif event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_ESCAPE or event.key == pygame.K_AC_BACK:
-                    return # العودة للمنيو عند ضغط زر التراجع للهاتف
+                    return 
 
         survival_seconds = (pygame.time.get_ticks() - start_ticks) // 1000
 
