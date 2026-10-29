@@ -36,7 +36,8 @@ def generate_dungeon(rows, cols):
         for r in range(min(y1, y2), max(y1, y2) + 1):
             grid[r][x2] = 0
 
-    player_spawn = (float(rooms[0]['x'] + 1) + 0.5, float(rooms[0]['y'] + 1) + 0.5)
+    # إرجاع قيم صحيحة للغرفة الأولى لمنع أخطاء كسر المصفوفات الإحداثية
+    player_spawn = (int(rooms[0]['x'] + 2), int(rooms[0]['y'] + 2))
     
     chest_positions = []
     trap_positions = []
