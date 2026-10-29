@@ -21,6 +21,7 @@ SCALE = SCREEN_WIDTH // NUM_RAYS
 COLOR_BG = (15, 15, 15)
 COLOR_CEILING = (20, 24, 30)
 COLOR_FLOOR = (35, 35, 35)
+COLOR_ACCENT = (230, 126, 34)
 
 screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
 pygame.display.set_caption("Dark Dungeon 3D Stable")
@@ -104,13 +105,7 @@ def draw_custom_hud(time_alive, is_game_over):
         pygame.draw.rect(screen, (255, 255, 255), (SCREEN_WIDTH//2 - 50, SCREEN_HEIGHT//2 - 50, 100, 100), border_radius=20)
 
 def main_menu():
-    # توفير أيقونة احتياطية صامتة
-    if not os.path.exists("icon.png"):
-        icon_surf = pygame.Surface((512, 512))
-        icon_surf.fill((30,30,30))
-        pygame.draw.rect(icon_surf, (230, 126, 34), (128, 128, 256, 256), border_radius=40)
-        pygame.image.save(icon_surf, "icon.png")
-        
+    # لا تنشئ ملفات أثناء التشغيل على أندرويد؛ الأيقونة تخص إعدادات البناء فقط.
     while True:
         screen.fill(COLOR_BG)
         
