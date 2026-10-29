@@ -1,14 +1,12 @@
 import random
 
 def generate_dungeon(rows, cols):
-    # مصفوفة المتاهة: 1 جدار حجر حقيقي، 0 ممر فارغ
     grid = [[1 for _ in range(cols)] for _ in range(rows)]
     rooms = []
     
-    # إعدادات لإنشاء متاهة ضخمة ومتشعبة
-    min_room_size = 6
-    max_room_size = 12
-    max_rooms_count = 25 
+    min_room_size = 4
+    max_room_size = 7
+    max_rooms_count = 6 
 
     for _ in range(max_rooms_count):
         w = random.randint(min_room_size, max_room_size)
@@ -29,7 +27,6 @@ def generate_dungeon(rows, cols):
                     grid[r][c] = 0
             rooms.append({'x': x, 'y': y, 'w': w, 'h': h})
 
-    # ربط الغرف بممرات ضيقة ومظلمة
     for i in range(len(rooms) - 1):
         x1, y1 = rooms[i]['x'] + rooms[i]['w'] // 2, rooms[i]['y'] + rooms[i]['h'] // 2
         x2, y2 = rooms[i+1]['x'] + rooms[i+1]['w'] // 2, rooms[i+1]['y'] + rooms[i+1]['h'] // 2
@@ -39,7 +36,7 @@ def generate_dungeon(rows, cols):
         for r in range(min(y1, y2), max(y1, y2) + 1):
             grid[r][x2] = 0
 
-    player_spawn = (float(rooms[0]['x'] + 2) + 0.5, float(rooms[0]['y'] + 2) + 0.5)
+    player_spawn = (float(rooms[0]['x'] + 1) + 0.5, float(rooms[0]['y'] + 1) + 0.5)
     
     chest_positions = []
     trap_positions = []
