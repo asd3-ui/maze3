@@ -4,10 +4,10 @@ import heapq
 
 class Player3D:
     def __init__(self, start_x, start_y):
-        self.x = float(start_x)
-        self.y = float(start_y)
+        self.x = float(start_x) + 0.5
+        self.y = float(start_y) + 0.5
         self.angle = 0.0 
-        self.speed = 0.06 # تقليل السرعة قليلاً لتناسب شاشات اللمس
+        self.speed = 0.06 
         self.rot_speed = 0.04 
         self.health = 100
         self.score = 0
@@ -15,14 +15,16 @@ class Player3D:
     def move_forward(self, dungeon_map):
         nx = self.x + math.cos(self.angle) * self.speed
         ny = self.y + math.sin(self.angle) * self.speed
-        if dungeon_map[int(self.y)][int(nx)] == 0: self.x = nx
-        if dungeon_map[int(ny)][int(self.x)] == 0: self.y = ny
+        if 0 <= int(ny) < len(dungeon_map) and 0 <= int(nx) < len(dungeon_map[0]):
+            if dungeon_map[int(self.y)][int(nx)] == 0: self.x = nx
+            if dungeon_map[int(ny)][int(self.x)] == 0: self.y = ny
 
     def move_backward(self, dungeon_map):
         nx = self.x - math.cos(self.angle) * self.speed
         ny = self.y - math.sin(self.angle) * self.speed
-        if dungeon_map[int(self.y)][int(nx)] == 0: self.x = nx
-        if dungeon_map[int(ny)][int(self.x)] == 0: self.y = ny
+        if 0 <= int(ny) < len(dungeon_map) and 0 <= int(nx) < len(dungeon_map[0]):
+            if dungeon_map[int(self.y)][int(nx)] == 0: self.x = nx
+            if dungeon_map[int(ny)][int(self.x)] == 0: self.y = ny
 
     def rotate_left(self):
         self.angle -= self.rot_speed
@@ -39,11 +41,12 @@ class Enemy3D:
         self.recalc_timer = 0
 
     def heuristic(self, a, b):
+        # تصحيح تتبع الأبعاد للحساب الإحداثي الثنائي لمنع الانهيار البرمجي
         return abs(a[0] - b[0]) + abs(a[1] - b[1])
 
     def a_star(self, start, goal, dungeon_map):
-        start_node = (int(start[0]), int(start[1])) 
-        goal_node = (int(goal[0]), int(goal[1]))
+        start_node = (int(start[1]), int(start[0])) # row, col -> y, x
+        goal_node = (int(goal[1]), int(goal[0]))
 
         open_set = []
         heapq.heappush(open_set, (0, start_node))
@@ -56,7 +59,7 @@ class Enemy3D:
             if current == goal_node:
                 path = []
                 while current in came_from:
-                    path.append((float(current[0]) + 0.5, float(current[1]) + 0.5))
+                    path.append((float(current[1]) + 0.5, float(current[0]) + 0.5)) # x, y
                     current = came_from[current]
                 path.reverse()
                 return path
@@ -77,7 +80,6 @@ class Enemy3D:
 
     def update_chase(self, player_x, player_y, dungeon_map):
         self.recalc_timer += 1
-        # إعادة حساب المسار كل 30 إطار لحفظ طاقة المعالج وتقليل التجميد
         if self.recalc_timer % 30 == 0 or not self.path:
             self.path = self.a_star((self.x, self.y), (player_x, player_y), dungeon_map)
 
@@ -99,7 +101,7 @@ class VirtualJoystick:
     def __init__(self, screen_width, screen_height):
         bx1 = 180
         by1 = screen_height - 180
-        sz = 75 # زيادة الحجم لتناسب أصابع اليد
+        sz = 75 
         self.fwd = pygame.Rect(bx1 - sz//2, by1 - int(sz*1.4), sz, sz)
         self.bwd = pygame.Rect(bx1 - sz//2, by1 + int(sz*0.4), sz, sz)
         
@@ -108,30 +110,25 @@ class VirtualJoystick:
         self.rot_r = pygame.Rect(bx2 + int(sz*0.4), by1 - sz//2, sz, sz)
 
     def draw(self, surface):
-        # رسم الأزرار بأسهم هندسية مرسومة يدوياً كمتجهات بدلاً من الخطوط المنهارة
         buttons = [
-            (self.fwd, [(0, 15), (-15, -10), (15, -10)]), # سهم لأعلى
-            (self.bwd, [(0, -15), (-15, 10), (15, 10)]),  # سهم لأسفل
-            (self.rot_l, [(15, 0), (-10, -15), (-10, 15)]),# التفات يسار
-            (self.rot_r, [(-15, 0), (10, -15), (10, 15)]) # التفات يمين
+            (self.fwd, [(0, 15), (-15, -10), (15, -10)]), 
+            (self.bwd, [(0, -15), (-15, 10), (15, 10)]),  
+            (self.rot_l, [(15, 0), (-10, -15), (-10, 15)]),
+            (self.rot_r, [(-15, 0), (10, -15), (10, 15)]) 
         ]
         for rect, poly_pts in buttons:
             s = pygame.Surface((rect.width, rect.height), pygame.SRCALPHA)
             pygame.draw.rect(s, (44, 62, 80, 200), (0, 0, rect.width, rect.height), border_radius=20)
             pygame.draw.rect(s, (230, 126, 34, 255), (0, 0, rect.width, rect.height), 4, border_radius=20)
-            
-            # رسم السهم الهندسي في منتصف الزر
             center_pts = [(pt[0] + rect.width//2, pt[1] + rect.height//2) for pt in poly_pts]
             pygame.draw.polygon(s, (255, 255, 255), center_pts)
             surface.blit(s, (rect.x, rect.y))
 
     def get_action(self):
         move, rot = 0, 0
-        pts = []
+        # فحص آمن لحالة الضغط يمنع تعطل خيوط المعالجة
         if pygame.mouse.get_pressed()[0]:
-            pts.append(pygame.mouse.get_pos())
-            
-        for p in pts:
+            p = pygame.mouse.get_pos()
             if self.fwd.collidepoint(p): move = 1
             if self.bwd.collidepoint(p): move = -1
             if self.rot_l.collidepoint(p): rot = -1
