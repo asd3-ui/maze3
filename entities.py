@@ -4,11 +4,11 @@ import heapq
 
 class Player3D:
     def __init__(self, start_x, start_y):
-        self.x = start_x
-        self.y = start_y
-        self.angle = 0.0 # زاوية النظر والالتفات ثلاثية الأبعاد
-        self.speed = 0.08
-        self.rot_speed = 0.05 # سرعة دوران الكاميرا
+        self.x = float(start_x)
+        self.y = float(start_y)
+        self.angle = 0.0 
+        self.speed = 0.06 # تقليل السرعة قليلاً لتناسب شاشات اللمس
+        self.rot_speed = 0.04 
         self.health = 100
         self.score = 0
 
@@ -42,8 +42,8 @@ class Enemy3D:
         return abs(a[0] - b[0]) + abs(a[1] - b[1])
 
     def a_star(self, start, goal, dungeon_map):
-        start_node = (int(start[1]), int(start[0])) # row, col
-        goal_node = (int(goal[1]), int(goal[0]))
+        start_node = (int(start[0]), int(start[1])) 
+        goal_node = (int(goal[0]), int(goal[1]))
 
         open_set = []
         heapq.heappush(open_set, (0, start_node))
@@ -56,7 +56,7 @@ class Enemy3D:
             if current == goal_node:
                 path = []
                 while current in came_from:
-                    path.append((float(current[1]) + 0.5, float(current[0]) + 0.5))
+                    path.append((float(current[0]) + 0.5, float(current[1]) + 0.5))
                     current = came_from[current]
                 path.reverse()
                 return path
@@ -77,7 +77,8 @@ class Enemy3D:
 
     def update_chase(self, player_x, player_y, dungeon_map):
         self.recalc_timer += 1
-        if self.recalc_timer % 15 == 0 or not self.path:
+        # إعادة حساب المسار كل 30 إطار لحفظ طاقة المعالج وتقليل التجميد
+        if self.recalc_timer % 30 == 0 or not self.path:
             self.path = self.a_star((self.x, self.y), (player_x, player_y), dungeon_map)
 
         if self.path:
@@ -95,35 +96,41 @@ class Enemy3D:
                 self.y += (dy / dist) * self.speed
 
 class VirtualJoystick:
-    """جهاز تحكم متطور باللمس للهواتف الذكية (الحركة والالتفات)"""
     def __init__(self, screen_width, screen_height):
-        # جزء الحركة (يمين - يسار - أمام - خلف)
         bx1 = 180
         by1 = screen_height - 180
-        sz = 65
+        sz = 75 # زيادة الحجم لتناسب أصابع اليد
         self.fwd = pygame.Rect(bx1 - sz//2, by1 - int(sz*1.4), sz, sz)
         self.bwd = pygame.Rect(bx1 - sz//2, by1 + int(sz*0.4), sz, sz)
         
-        # جزء الالتفات ورؤية المتاهة (أزرار جانبية يمين الشاشة)
         bx2 = screen_width - 180
         self.rot_l = pygame.Rect(bx2 - int(sz*1.2), by1 - sz//2, sz, sz)
         self.rot_r = pygame.Rect(bx2 + int(sz*0.4), by1 - sz//2, sz, sz)
 
     def draw(self, surface):
-        buttons = [(self.fwd, "▲"), (self.bwd, "▼"), (self.rot_l, "↩"), (self.rot_r, "↪")]
-        for rect, icon in buttons:
+        # رسم الأزرار بأسهم هندسية مرسومة يدوياً كمتجهات بدلاً من الخطوط المنهارة
+        buttons = [
+            (self.fwd, [(0, 15), (-15, -10), (15, -10)]), # سهم لأعلى
+            (self.bwd, [(0, -15), (-15, 10), (15, 10)]),  # سهم لأسفل
+            (self.rot_l, [(15, 0), (-10, -15), (-10, 15)]),# التفات يسار
+            (self.rot_r, [(-15, 0), (10, -15), (10, 15)]) # التفات يمين
+        ]
+        for rect, poly_pts in buttons:
             s = pygame.Surface((rect.width, rect.height), pygame.SRCALPHA)
-            pygame.draw.rect(s, (44, 62, 80, 180), (0, 0, rect.width, rect.height), border_radius=15)
-            pygame.draw.rect(s, (230, 126, 34, 220), (0, 0, rect.width, rect.height), 3, border_radius=15)
+            pygame.draw.rect(s, (44, 62, 80, 200), (0, 0, rect.width, rect.height), border_radius=20)
+            pygame.draw.rect(s, (230, 126, 34, 255), (0, 0, rect.width, rect.height), 4, border_radius=20)
+            
+            # رسم السهم الهندسي في منتصف الزر
+            center_pts = [(pt[0] + rect.width//2, pt[1] + rect.height//2) for pt in poly_pts]
+            pygame.draw.polygon(s, (255, 255, 255), center_pts)
             surface.blit(s, (rect.x, rect.y))
-            font = pygame.font.SysFont(None, 42)
-            txt = font.render(icon, True, (255, 255, 255))
-            surface.blit(txt, txt.get_rect(center=(rect.x + rect.width//2, rect.y + rect.height//2)))
 
     def get_action(self):
-        move, rot = 0, 0 # 1 للأمام، -1 للخلف | 1 يمين، -1 يسار
-        pts = [pygame.mouse.get_pos()] if pygame.mouse.get_pressed()[0] else []
-        
+        move, rot = 0, 0
+        pts = []
+        if pygame.mouse.get_pressed()[0]:
+            pts.append(pygame.mouse.get_pos())
+            
         for p in pts:
             if self.fwd.collidepoint(p): move = 1
             if self.bwd.collidepoint(p): move = -1
