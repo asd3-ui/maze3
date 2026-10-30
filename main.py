@@ -163,7 +163,8 @@ def game_loop():
     while True:
         dt = min(clock.tick(60) / 1000.0, 0.05)
         width, height = screen.get_size()
-        for event in pygame.event.get():
+        events = pygame.event.get()
+        for event in events:
             if event.type == pygame.QUIT:
                 return False
             joystick.handle_event(event)
@@ -172,6 +173,8 @@ def game_loop():
                     return True
                 if game_over and event.key in (pygame.K_RETURN, pygame.K_SPACE):
                     return True
+            if game_over and event.type in (pygame.MOUSEBUTTONDOWN, pygame.FINGERDOWN):
+                return True
 
         if not game_over:
             keys = pygame.key.get_pressed()
@@ -201,10 +204,6 @@ def game_loop():
                       (width // 2, height // 2))
             draw_text(screen, "TAP OR PRESS ENTER TO RETURN", FONT, MUTED,
                       (width // 2, height // 2 + 58))
-            if pygame.mouse.get_pressed()[0]:
-                return True
-            if any(e.type == pygame.FINGERDOWN for e in pygame.event.get()):
-                return True
         pygame.display.flip()
 
 
