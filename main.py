@@ -1,179 +1,219 @@
-import pygame
-import sys
 import json
-import os
 import math
-
-try:
-    import android
-    android.init()
-except ImportError:
-    pass
+import os
+import sys
+import pygame
 
 from maze_generator import generate_dungeon
 from entities import Player3D, Enemy3D, VirtualJoystick
 
 pygame.init()
-SCREEN_WIDTH = 1280
-SCREEN_HEIGHT = 720
-
-FOV = math.pi / 3       
-HALF_FOV = FOV / 2
-NUM_RAYS = 120          
-MAX_DEPTH = 12          
-DELTA_ANGLE = FOV / NUM_RAYS
-SCALE = SCREEN_WIDTH // NUM_RAYS
-
-COLOR_BG = (15, 15, 15)
-COLOR_CEILING = (20, 24, 30)
-COLOR_FLOOR = (35, 35, 35)
-COLOR_ACCENT = (230, 126, 34)
-
-screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
-pygame.display.set_caption("Dark Dungeon 3D Stable")
+pygame.display.set_caption("Maze 3D")
+INFO = pygame.display.Info()
+SCREEN_WIDTH = max(640, INFO.current_w or 960)
+SCREEN_HEIGHT = max(360, INFO.current_h or 540)
+screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.FULLSCREEN)
 clock = pygame.time.Clock()
-HIGH_SCORE_FILE = "highscore_3d.json"
+
+FOV = math.pi / 3
+MAX_DEPTH = 16
+NUM_RAYS = max(100, min(180, SCREEN_WIDTH // 6))
+DELTA_ANGLE = FOV / NUM_RAYS
+RAY_WIDTH = SCREEN_WIDTH / NUM_RAYS
+COLOR_BG = (10, 16, 25)
+COLOR_CEILING = (21, 31, 44)
+COLOR_FLOOR = (29, 34, 39)
+ACCENT = (245, 158, 55)
+WHITE = (245, 247, 250)
+MUTED = (175, 188, 202)
+FONT = pygame.font.Font(None, max(24, SCREEN_HEIGHT // 24))
+BIG_FONT = pygame.font.Font(None, max(48, SCREEN_HEIGHT // 10))
+HIGH_SCORE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "highscore_3d.json")
+BACK_KEY = getattr(pygame, "K_AC_BACK", -999)
+
 
 def load_high_score():
-    if os.path.exists(HIGH_SCORE_FILE):
-        try:
-            with open(HIGH_SCORE_FILE, "r") as f: return json.load(f).get("high_score", 0)
-        except: return 0
-    return 0
+    try:
+        with open(HIGH_SCORE_FILE, "r", encoding="utf-8") as file:
+            return int(json.load(file).get("high_score", 0))
+    except (OSError, ValueError, TypeError, json.JSONDecodeError):
+        return 0
+
 
 def save_high_score(score):
-    if score > load_high_score():
-        try:
-            with open(HIGH_SCORE_FILE, "w") as f: json.dump({"high_score": score}, f)
-        except: pass
+    if score <= load_high_score():
+        return
+    try:
+        with open(HIGH_SCORE_FILE, "w", encoding="utf-8") as file:
+            json.dump({"high_score": int(score)}, file)
+    except OSError:
+        pass
+
+
+def draw_text(surface, text, font, color, center):
+    image = font.render(str(text), True, color)
+    surface.blit(image, image.get_rect(center=center))
+
 
 def render_3d_world(player, dungeon_map, enemies):
-    pygame.draw.rect(screen, COLOR_CEILING, (0, 0, SCREEN_WIDTH, SCREEN_HEIGHT // 2))
-    pygame.draw.rect(screen, COLOR_FLOOR, (0, SCREEN_HEIGHT // 2, SCREEN_WIDTH, SCREEN_HEIGHT // 2))
-    
-    start_angle = player.angle - HALF_FOV
-    
+    width, height = screen.get_size()
+    horizon = height // 2
+    pygame.draw.rect(screen, COLOR_CEILING, (0, 0, width, horizon))
+    pygame.draw.rect(screen, COLOR_FLOOR, (0, horizon, width, height - horizon))
+    depth_buffer = [MAX_DEPTH] * NUM_RAYS
+    start_angle = player.angle - FOV / 2
+
     for ray in range(NUM_RAYS):
         angle = start_angle + ray * DELTA_ANGLE
-        sin_a = math.sin(angle)
-        cos_a = math.cos(angle)
-        
-        for depth in range(1, int(MAX_DEPTH * 10)):
-            dist = depth / 10.0
-            target_x = player.x + cos_a * dist
-            target_y = player.y + sin_a * dist
-            
-            if 0 <= int(target_y) < len(dungeon_map) and 0 <= int(target_x) < len(dungeon_map[0]):
-                if dungeon_map[int(target_y)][int(target_x)] == 1:
-                    dist *= math.cos(player.angle - angle)
-                    wall_height = min(SCREEN_HEIGHT, int(SCREEN_HEIGHT / (dist + 0.0001)))
-                    shade = 255 / (1 + dist * dist * 0.3)
-                    color = (int(shade * 0.35), int(shade * 0.4), int(shade * 0.45))
-                    pygame.draw.rect(screen, color, (ray * SCALE, (SCREEN_HEIGHT - wall_height) // 2, SCALE, wall_height))
-                    break
-            else:
+        sin_a, cos_a = math.sin(angle), math.cos(angle)
+        distance = 0.05
+        while distance < MAX_DEPTH:
+            tx = int(player.x + cos_a * distance)
+            ty = int(player.y + sin_a * distance)
+            if ty < 0 or ty >= len(dungeon_map) or tx < 0 or tx >= len(dungeon_map[0]):
+                distance = MAX_DEPTH
                 break
+            if dungeon_map[ty][tx] == 1:
+                break
+            distance += 0.035
 
+        corrected = max(0.08, distance * math.cos(player.angle - angle))
+        depth_buffer[ray] = corrected
+        wall_height = min(height * 1.5, int(height / corrected))
+        shade = max(25, min(230, int(225 / (1 + corrected * corrected * 0.11))))
+        wall_color = (int(shade * 0.55), int(shade * 0.68), int(shade * 0.82))
+        x = int(ray * RAY_WIDTH)
+        pygame.draw.rect(screen, wall_color,
+                         (x, (height - wall_height) // 2, math.ceil(RAY_WIDTH) + 1, wall_height))
+
+    sprites = []
     for enemy in enemies:
-        ex = enemy.x - player.x
-        ey = enemy.y - player.y
-        theta = math.atan2(ey, ex)
-        gamma = theta - player.angle
-        
-        if ex > 0 and start_angle % (2*math.pi) > math.pi: gamma += 2*math.pi
-        
-        if -HALF_FOV < gamma < HALF_FOV:
-            screen_x = int((gamma + HALF_FOV) / DELTA_ANGLE) * SCALE
-            dist = math.hypot(ex, ey)
-            if 0.3 < dist < MAX_DEPTH:
-                sprite_height = min(SCREEN_HEIGHT, int(SCREEN_HEIGHT / dist))
-                shade = 255 / (1 + dist * dist * 0.1)
-                e_color = (int(shade * 0.7), int(shade * 0.1), int(shade * 0.2))
-                pygame.draw.circle(screen, e_color, (screen_x, SCREEN_HEIGHT // 2), sprite_height // 5)
+        dx, dy = enemy.x - player.x, enemy.y - player.y
+        distance = math.hypot(dx, dy)
+        relative = (math.atan2(dy, dx) - player.angle + math.pi) % (2 * math.pi) - math.pi
+        if distance > 0.25 and abs(relative) < FOV / 2 + 0.15:
+            sprites.append((distance, relative))
+    sprites.sort(reverse=True)
 
-def draw_custom_hud(time_alive, is_game_over):
-    if not is_game_over:
-        pygame.draw.rect(screen, (44, 62, 80), (20, 20, 240, 45), border_radius=8)
-        pygame.draw.rect(screen, COLOR_ACCENT, (25, 25, min(230, time_alive * 4), 35), border_radius=5)
-    else:
-        overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
-        overlay.fill((192, 57, 43, 200)) 
-        screen.blit(overlay, (0,0))
-        pygame.draw.rect(screen, (255, 255, 255), (SCREEN_WIDTH//2 - 50, SCREEN_HEIGHT//2 - 50, 100, 100), border_radius=20)
+    for distance, relative in sprites:
+        ray_index = int((relative + FOV / 2) / DELTA_ANGLE)
+        if 0 <= ray_index < NUM_RAYS and distance < depth_buffer[ray_index] + 0.25:
+            sx = int((relative + FOV / 2) / FOV * width)
+            size = min(height, int(height / max(0.25, distance) * 0.52))
+            sy = horizon
+            glow = max(65, min(255, int(255 / (1 + distance * 0.15))))
+            pygame.draw.circle(screen, (glow, 48, 42), (sx, sy), max(8, size // 5))
+            pygame.draw.circle(screen, (255, 175, 125), (sx - size // 18, sy - size // 20),
+                               max(2, size // 32))
+
+
+def draw_hud(seconds, joystick):
+    width, height = screen.get_size()
+    panel = pygame.Surface((min(230, width // 3), 54), pygame.SRCALPHA)
+    panel.fill((8, 14, 22, 175))
+    screen.blit(panel, (12, 12))
+    draw_text(screen, f"TIME  {seconds}s", FONT, WHITE, (panel.get_width() // 2 + 12, 39))
+    joystick.draw(screen)
+
+
+def draw_button(surface, rect, label, fill=ACCENT):
+    pygame.draw.rect(surface, (12, 22, 34), rect.inflate(8, 8), border_radius=18)
+    pygame.draw.rect(surface, fill, rect, border_radius=16)
+    draw_text(surface, label, FONT, WHITE, rect.center)
+
 
 def main_menu():
+    width, height = screen.get_size()
+    start = pygame.Rect(width // 2 - min(170, width // 4), height // 2,
+                        min(340, width // 2), max(66, height // 9))
+    quit_rect = pygame.Rect(start.x, start.bottom + 18, start.width, start.height)
     while True:
         screen.fill(COLOR_BG)
-        btn_start = pygame.Rect(SCREEN_WIDTH//2 - 150, SCREEN_HEIGHT//2 - 40, 300, 80)
-        pygame.draw.rect(screen, (230, 126, 34), btn_start, border_radius=15)
-        pygame.draw.polygon(screen, (255,255,255), [(SCREEN_WIDTH//2 - 15, SCREEN_HEIGHT//2 - 20), (SCREEN_WIDTH//2 - 15, SCREEN_HEIGHT//2 + 20), (SCREEN_WIDTH//2 + 20, SCREEN_HEIGHT//2)])
-        
+        draw_text(screen, "MAZE 3D", BIG_FONT, WHITE, (width // 2, height // 3))
+        draw_text(screen, "ESCAPE THE DUNGEON", FONT, MUTED, (width // 2, height // 3 + 48))
+        draw_button(screen, start, "PLAY")
+        draw_button(screen, quit_rect, "EXIT", (75, 91, 108))
+        draw_text(screen, f"BEST SURVIVAL: {load_high_score()}s", FONT, MUTED,
+                  (width // 2, quit_rect.bottom + 34))
+        pygame.display.flip()
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
-                pygame.quit()
-                sys.exit()
-            if event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_ESCAPE or event.key == pygame.K_AC_BACK:
-                    pygame.quit()
-                    sys.exit()
-            if event.type == pygame.MOUSEBUTTONDOWN:
-                if btn_start.collidepoint(event.pos): return
-
-        pygame.display.flip()
+                return False
+            if event.type == pygame.KEYDOWN and event.key in (pygame.K_ESCAPE, BACK_KEY):
+                return False
+            if event.type in (pygame.MOUSEBUTTONDOWN, pygame.FINGERDOWN):
+                pos = event.pos if event.type == pygame.MOUSEBUTTONDOWN else (
+                    int(event.x * width), int(event.y * height))
+                if start.collidepoint(pos):
+                    return True
+                if quit_rect.collidepoint(pos):
+                    return False
         clock.tick(60)
 
+
 def game_loop():
-    dungeon_map, spawn_pos, chests_locs, _ = generate_dungeon(20, 20)
-    player = Player3D(spawn_pos[0], spawn_pos[1])
-    
-    enemies = []
-    if chests_locs:
-        enemies.append(Enemy3D(chests_locs[0][0], chests_locs[0][1], 0.035))
-    else:
-        enemies.append(Enemy3D(spawn_pos[0] + 2, spawn_pos[1] + 2, 0.035))
-    
-    joystick = VirtualJoystick(SCREEN_WIDTH, SCREEN_HEIGHT)
-    start_ticks = pygame.time.get_ticks()
-    running = True
+    dungeon_map, spawn_pos, enemy_positions, _ = generate_dungeon(21, 21)
+    player = Player3D(*spawn_pos)
+    enemies = [Enemy3D(x, y, 1.0) for x, y in enemy_positions[:2]]
+    if not enemies:
+        enemies = [Enemy3D(spawn_pos[0] + 3, spawn_pos[1] + 3, 1.0)]
+    joystick = VirtualJoystick(*screen.get_size())
+    elapsed = 0.0
     game_over = False
-
-    while running:
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT: 
-                running = False
-            elif event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_ESCAPE or event.key == pygame.K_AC_BACK:
-                    return 
-
-        survival_seconds = (pygame.time.get_ticks() - start_ticks) // 1000
+    while True:
+        dt = min(clock.tick(60) / 1000.0, 0.05)
+        width, height = screen.get_size()
+        events = pygame.event.get()
+        for event in events:
+            if event.type == pygame.QUIT:
+                return False
+            joystick.handle_event(event)
+            if event.type == pygame.KEYDOWN:
+                if event.key in (pygame.K_ESCAPE, BACK_KEY):
+                    return True
+                if game_over and event.key in (pygame.K_RETURN, pygame.K_SPACE):
+                    return True
+            if game_over and event.type in (pygame.MOUSEBUTTONDOWN, pygame.FINGERDOWN):
+                return True
 
         if not game_over:
             keys = pygame.key.get_pressed()
-            if keys[pygame.K_w] or keys[pygame.K_UP]: player.move_forward(dungeon_map)
-            if keys[pygame.K_s] or keys[pygame.K_DOWN]: player.move_backward(dungeon_map)
-            if keys[pygame.K_a] or keys[pygame.K_LEFT]: player.rotate_left()
-            if keys[pygame.K_d] or keys[pygame.K_RIGHT]: player.rotate_right()
-            
-            m_input, r_input = joystick.get_action()
-            if m_input == 1: player.move_forward(dungeon_map)
-            if m_input == -1: player.move_backward(dungeon_map)
-            if r_input == -1: player.rotate_left()
-            if r_input == 1: player.rotate_right()
-            
+            forward = int(keys[pygame.K_w] or keys[pygame.K_UP])
+            backward = int(keys[pygame.K_s] or keys[pygame.K_DOWN])
+            turn = int(keys[pygame.K_d] or keys[pygame.K_RIGHT]) - int(
+                keys[pygame.K_a] or keys[pygame.K_LEFT])
+            touch_move, touch_turn = joystick.get_action()
+            player.move(forward - backward + touch_move, dt, dungeon_map)
+            player.rotate(turn + touch_turn, dt)
+            elapsed += dt
             for enemy in enemies:
-                enemy.update_chase(player.x, player.y, dungeon_map)
-                if math.hypot(enemy.x - player.x, enemy.y - player.y) < 0.45:
+                enemy.update_chase(player.x, player.y, dungeon_map, dt)
+                if math.hypot(enemy.x - player.x, enemy.y - player.y) < 0.42:
                     game_over = True
-                    save_high_score(survival_seconds)
+                    save_high_score(int(elapsed))
+                    break
 
         render_3d_world(player, dungeon_map, enemies)
-        joystick.draw(screen)
-        draw_custom_hud(survival_seconds, game_over)
-
+        draw_hud(int(elapsed), joystick)
+        if game_over:
+            overlay = pygame.Surface((width, height), pygame.SRCALPHA)
+            overlay.fill((5, 8, 14, 190))
+            screen.blit(overlay, (0, 0))
+            draw_text(screen, "CAUGHT!", BIG_FONT, (255, 115, 95), (width // 2, height // 2 - 60))
+            draw_text(screen, f"SURVIVED {int(elapsed)} SECONDS", FONT, WHITE,
+                      (width // 2, height // 2))
+            draw_text(screen, "TAP OR PRESS ENTER TO RETURN", FONT, MUTED,
+                      (width // 2, height // 2 + 58))
         pygame.display.flip()
-        clock.tick(60)
+
+
+def main():
+    while main_menu():
+        if not game_loop():
+            break
+    pygame.quit()
+    sys.exit(0)
+
 
 if __name__ == "__main__":
-    while True:
-        main_menu()
-        game_loop()
+    main()

@@ -1,20 +1,22 @@
 [app]
-title = Dark Dungeon 3D Chase
-package.name = dark_dungeon_3d_chase
-package.domain = org.fantasy3dgames
+title = Maze 3D
+package.name = maze3d
+package.domain = org.asd3ui
 source.dir = .
-source.include_exts = py,png,jpg,kv,atlas,json
-version = 1.0.0
-requirements = python3==3.10.12,pygame,numpy
+source.include_exts = py,png,jpg,jpeg,json,ttf,otf,wav,ogg
+version = 1.1.1
+requirements = python3,pygame
 orientation = landscape
 fullscreen = 1
-android.permissions = INTERNET, WRITE_EXTERNAL_STORAGE, READ_EXTERNAL_STORAGE
+android.permissions = INTERNET
 android.api = 33
 android.minapi = 24
 android.ndk = 25b
 android.accept_sdk_license = True
 android.private_storage = True
+android.archs = arm64-v8a, armeabi-v7a
 p4a.branch = v2024.01.21
+p4a.local_recipes = ./p4a-recipes
 
 [buildozer]
 log_level = 2

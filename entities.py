@@ -1,136 +1,184 @@
-import pygame
 import math
 import heapq
+import pygame
+
 
 class Player3D:
     def __init__(self, start_x, start_y):
         self.x = float(start_x) + 0.5
         self.y = float(start_y) + 0.5
-        self.angle = 0.0 
-        self.speed = 0.06 
-        self.rot_speed = 0.04 
-        self.health = 100
-        self.score = 0
+        self.angle = 0.0
+        self.speed = 2.2
+        self.rot_speed = 2.5
+
+    def _move_axis(self, nx, ny, dungeon_map):
+        radius = 0.18
+        if self._is_open(nx + math.copysign(radius, nx - self.x) if nx != self.x else nx,
+                         self.y, dungeon_map):
+            self.x = nx
+        if self._is_open(self.x, ny + math.copysign(radius, ny - self.y) if ny != self.y else ny,
+                         dungeon_map):
+            self.y = ny
+
+    @staticmethod
+    def _is_open(x, y, dungeon_map):
+        row, col = int(y), int(x)
+        return 0 <= row < len(dungeon_map) and 0 <= col < len(dungeon_map[0]) and dungeon_map[row][col] == 0
+
+    def move(self, direction, dt, dungeon_map):
+        if not direction:
+            return
+        distance = self.speed * dt * max(-1, min(1, direction))
+        nx = self.x + math.cos(self.angle) * distance
+        ny = self.y + math.sin(self.angle) * distance
+        self._move_axis(nx, ny, dungeon_map)
+
+    def rotate(self, direction, dt):
+        self.angle = (self.angle + direction * self.rot_speed * dt) % (2 * math.pi)
 
     def move_forward(self, dungeon_map):
-        nx = self.x + math.cos(self.angle) * self.speed
-        ny = self.y + math.sin(self.angle) * self.speed
-        if 0 <= int(ny) < len(dungeon_map) and 0 <= int(nx) < len(dungeon_map[0]):
-            if dungeon_map[int(self.y)][int(nx)] == 0: self.x = nx
-            if dungeon_map[int(ny)][int(self.x)] == 0: self.y = ny
+        self.move(1, 1 / 30, dungeon_map)
 
     def move_backward(self, dungeon_map):
-        nx = self.x - math.cos(self.angle) * self.speed
-        ny = self.y - math.sin(self.angle) * self.speed
-        if 0 <= int(ny) < len(dungeon_map) and 0 <= int(nx) < len(dungeon_map[0]):
-            if dungeon_map[int(self.y)][int(nx)] == 0: self.x = nx
-            if dungeon_map[int(ny)][int(self.x)] == 0: self.y = ny
+        self.move(-1, 1 / 30, dungeon_map)
 
     def rotate_left(self):
-        self.angle -= self.rot_speed
+        self.rotate(-1, 1 / 30)
 
     def rotate_right(self):
-        self.angle += self.rot_speed
+        self.rotate(1, 1 / 30)
+
 
 class Enemy3D:
-    def __init__(self, start_x, start_y, speed):
+    def __init__(self, start_x, start_y, speed=1.0):
         self.x = float(start_x) + 0.5
         self.y = float(start_y) + 0.5
-        self.speed = speed
+        self.speed = float(speed)
         self.path = []
-        self.recalc_timer = 0
+        self.recalc_timer = 0.0
 
-    def heuristic(self, a, b):
-        # تصحيح تتبع الأبعاد للحساب الإحداثي الثنائي لمنع الانهيار البرمجي
+    @staticmethod
+    def _heuristic(a, b):
         return abs(a[0] - b[0]) + abs(a[1] - b[1])
 
     def a_star(self, start, goal, dungeon_map):
-        start_node = (int(start[1]), int(start[0])) # row, col -> y, x
+        start_node = (int(start[1]), int(start[0]))
         goal_node = (int(goal[1]), int(goal[0]))
-
-        open_set = []
-        heapq.heappush(open_set, (0, start_node))
+        rows, cols = len(dungeon_map), len(dungeon_map[0])
+        if not (0 <= goal_node[0] < rows and 0 <= goal_node[1] < cols):
+            return []
+        frontier = [(0, start_node)]
         came_from = {}
-        g_score = {start_node: 0}
-
-        while open_set:
-            _, current = heapq.heappop(open_set)
-
+        cost = {start_node: 0}
+        visited = set()
+        while frontier:
+            _, current = heapq.heappop(frontier)
+            if current in visited:
+                continue
+            visited.add(current)
             if current == goal_node:
                 path = []
                 while current in came_from:
-                    path.append((float(current[1]) + 0.5, float(current[0]) + 0.5)) # x, y
+                    path.append((current[1] + 0.5, current[0] + 0.5))
                     current = came_from[current]
-                path.reverse()
-                return path
-
-            for dr, dc in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
-                neighbor = (current[0] + dr, current[1] + dc)
-                if 0 <= neighbor[0] < len(dungeon_map) and 0 <= neighbor[1] < len(dungeon_map[0]):
-                    if dungeon_map[neighbor[0]][neighbor[1]] == 1: continue
-                else: continue
-
-                tg = g_score[current] + 1
-                if neighbor not in g_score or tg < g_score[neighbor]:
-                    came_from[neighbor] = current
-                    g_score[neighbor] = tg
-                    f = tg + self.heuristic(neighbor, goal_node)
-                    heapq.heappush(open_set, (f, neighbor))
+                return list(reversed(path))
+            for dr, dc in ((-1, 0), (1, 0), (0, -1), (0, 1)):
+                nxt = (current[0] + dr, current[1] + dc)
+                if not (0 <= nxt[0] < rows and 0 <= nxt[1] < cols):
+                    continue
+                if dungeon_map[nxt[0]][nxt[1]] == 1:
+                    continue
+                new_cost = cost[current] + 1
+                if new_cost < cost.get(nxt, float("inf")):
+                    cost[nxt] = new_cost
+                    came_from[nxt] = current
+                    heapq.heappush(frontier, (new_cost + self._heuristic(nxt, goal_node), nxt))
         return []
 
-    def update_chase(self, player_x, player_y, dungeon_map):
-        self.recalc_timer += 1
-        if self.recalc_timer % 30 == 0 or not self.path:
+    def update_chase(self, player_x, player_y, dungeon_map, dt=1 / 60):
+        self.recalc_timer += dt
+        if self.recalc_timer >= 0.45 or not self.path:
             self.path = self.a_star((self.x, self.y), (player_x, player_y), dungeon_map)
+            self.recalc_timer = 0.0
+        if not self.path:
+            return
+        tx, ty = self.path[0]
+        dx, dy = tx - self.x, ty - self.y
+        distance = math.hypot(dx, dy)
+        step = self.speed * dt
+        if distance <= max(step, 0.04):
+            self.x, self.y = tx, ty
+            self.path.pop(0)
+        elif distance:
+            self.x += dx / distance * step
+            self.y += dy / distance * step
 
-        if self.path:
-            tx, ty = self.path[0]
-            dx = tx - self.x
-            dy = ty - self.y
-            dist = math.hypot(dx, dy)
-
-            if dist < self.speed:
-                self.x = tx
-                self.y = ty
-                self.path.pop(0)
-            else:
-                self.x += (dx / dist) * self.speed
-                self.y += (dy / dist) * self.speed
 
 class VirtualJoystick:
     def __init__(self, screen_width, screen_height):
-        bx1 = 180
-        by1 = screen_height - 180
-        sz = 75 
-        self.fwd = pygame.Rect(bx1 - sz//2, by1 - int(sz*1.4), sz, sz)
-        self.bwd = pygame.Rect(bx1 - sz//2, by1 + int(sz*0.4), sz, sz)
-        
-        bx2 = screen_width - 180
-        self.rot_l = pygame.Rect(bx2 - int(sz*1.2), by1 - sz//2, sz, sz)
-        self.rot_r = pygame.Rect(bx2 + int(sz*0.4), by1 - sz//2, sz, sz)
+        self.width = screen_width
+        self.height = screen_height
+        self.active = {}
+        self.mouse_position = None
+        self.mouse_down = False
+        self._layout()
 
-    def draw(self, surface):
-        buttons = [
-            (self.fwd, [(0, 15), (-15, -10), (15, -10)]), 
-            (self.bwd, [(0, -15), (-15, 10), (15, 10)]),  
-            (self.rot_l, [(15, 0), (-10, -15), (-10, 15)]),
-            (self.rot_r, [(-15, 0), (10, -15), (10, 15)]) 
-        ]
-        for rect, poly_pts in buttons:
-            s = pygame.Surface((rect.width, rect.height), pygame.SRCALPHA)
-            pygame.draw.rect(s, (44, 62, 80, 200), (0, 0, rect.width, rect.height), border_radius=20)
-            pygame.draw.rect(s, (230, 126, 34, 255), (0, 0, rect.width, rect.height), 4, border_radius=20)
-            center_pts = [(pt[0] + rect.width//2, pt[1] + rect.height//2) for pt in poly_pts]
-            pygame.draw.polygon(s, (255, 255, 255), center_pts)
-            surface.blit(s, (rect.x, rect.y))
+    def _layout(self):
+        w, h = self.width, self.height
+        size = max(58, min(94, int(min(w, h) * 0.14)))
+        margin = max(22, int(size * 0.45))
+        y = h - margin - size
+        self.forward = pygame.Rect(margin + size, y - size - 12, size, size)
+        self.backward = pygame.Rect(margin + size, y, size, size)
+        self.left = pygame.Rect(w - margin - size * 2 - 12, y, size, size)
+        self.right = pygame.Rect(w - margin - size, y, size, size)
+        self.buttons = [self.forward, self.backward, self.left, self.right]
+
+    def _point(self, event):
+        if event.type in (pygame.FINGERDOWN, pygame.FINGERMOTION, pygame.FINGERUP):
+            return int(event.x * self.width), int(event.y * self.height)
+        return event.pos
+
+    def handle_event(self, event):
+        if event.type in (pygame.FINGERDOWN, pygame.FINGERMOTION):
+            self.active[event.finger_id] = self._point(event)
+        elif event.type == pygame.FINGERUP:
+            self.active.pop(event.finger_id, None)
+        elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            self.mouse_down, self.mouse_position = True, event.pos
+        elif event.type == pygame.MOUSEMOTION and self.mouse_down:
+            self.mouse_position = event.pos
+        elif event.type == pygame.MOUSEBUTTONUP and event.button == 1:
+            self.mouse_down, self.mouse_position = False, None
 
     def get_action(self):
-        move, rot = 0, 0
-        # فحص آمن لحالة الضغط يمنع تعطل خيوط المعالجة
-        if pygame.mouse.get_pressed()[0]:
-            p = pygame.mouse.get_pos()
-            if self.fwd.collidepoint(p): move = 1
-            if self.bwd.collidepoint(p): move = -1
-            if self.rot_l.collidepoint(p): rot = -1
-            if self.rot_r.collidepoint(p): rot = 1
-        return move, rot
+        points = list(self.active.values())
+        if self.mouse_down and self.mouse_position:
+            points.append(self.mouse_position)
+        move = turn = 0
+        for point in points:
+            if self.forward.collidepoint(point):
+                move = 1
+            elif self.backward.collidepoint(point):
+                move = -1
+            elif self.left.collidepoint(point):
+                turn = -1
+            elif self.right.collidepoint(point):
+                turn = 1
+        return move, turn
+
+    def draw(self, surface):
+        labels = ((self.forward, "▲"), (self.backward, "▼"),
+                  (self.left, "◀"), (self.right, "▶"))
+        for rect, label in labels:
+            pressed = any(rect.collidepoint(p) for p in self.active.values())
+            if self.mouse_down and self.mouse_position and rect.collidepoint(self.mouse_position):
+                pressed = True
+            fill = (235, 132, 48, 225) if pressed else (24, 42, 60, 205)
+            button = pygame.Surface(rect.size, pygame.SRCALPHA)
+            pygame.draw.rect(button, fill, button.get_rect(), border_radius=18)
+            pygame.draw.rect(button, (245, 174, 91, 230), button.get_rect(), 3, border_radius=18)
+            font = pygame.font.Font(None, max(28, rect.height // 2))
+            glyph = font.render(label, True, (255, 255, 255))
+            button.blit(glyph, glyph.get_rect(center=button.get_rect().center))
+            surface.blit(button, rect)

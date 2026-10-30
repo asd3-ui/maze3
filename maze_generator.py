@@ -1,48 +1,69 @@
 import random
+from collections import deque
 
-def generate_dungeon(rows, cols):
+
+def _carve_passages(rows, cols):
     grid = [[1 for _ in range(cols)] for _ in range(rows)]
-    rooms = []
-    
-    min_room_size = 4
-    max_room_size = 7
-    max_rooms_count = 6 
+    start = (1, 1)
+    grid[1][1] = 0
+    stack = [start]
+    directions = ((-2, 0), (2, 0), (0, -2), (0, 2))
+    while stack:
+        row, col = stack[-1]
+        options = []
+        for dr, dc in directions:
+            nr, nc = row + dr, col + dc
+            if 1 <= nr < rows - 1 and 1 <= nc < cols - 1 and grid[nr][nc] == 1:
+                options.append((nr, nc, dr, dc))
+        if not options:
+            stack.pop()
+            continue
+        nr, nc, dr, dc = random.choice(options)
+        grid[row + dr // 2][col + dc // 2] = 0
+        grid[nr][nc] = 0
+        stack.append((nr, nc))
+    return grid
 
-    for _ in range(max_rooms_count):
-        w = random.randint(min_room_size, max_room_size)
-        h = random.randint(min_room_size, max_room_size)
-        x = random.randint(1, cols - w - 1)
-        y = random.randint(1, rows - h - 1)
-        
-        overlap = False
-        for other in rooms:
-            if (x < other['x'] + other['w'] and x + w > other['x'] and
-                y < other['y'] + other['h'] and y + h > other['y']):
-                overlap = True
-                break
-                
-        if not overlap:
-            for r in range(y, y + h):
-                for c in range(x, x + w):
-                    grid[r][c] = 0
-            rooms.append({'x': x, 'y': y, 'w': w, 'h': h})
 
-    for i in range(len(rooms) - 1):
-        x1, y1 = rooms[i]['x'] + rooms[i]['w'] // 2, rooms[i]['y'] + rooms[i]['h'] // 2
-        x2, y2 = rooms[i+1]['x'] + rooms[i+1]['w'] // 2, rooms[i+1]['y'] + rooms[i+1]['h'] // 2
-        
-        for c in range(min(x1, x2), max(x1, x2) + 1):
-            grid[y1][c] = 0
-        for r in range(min(y1, y2), max(y1, y2) + 1):
-            grid[r][x2] = 0
+def _farthest_open(grid, start):
+    queue = deque([(start, 0)])
+    visited = {start}
+    farthest = start
+    max_distance = 0
+    while queue:
+        (row, col), distance = queue.popleft()
+        if distance > max_distance:
+            farthest, max_distance = (row, col), distance
+        for dr, dc in ((-1, 0), (1, 0), (0, -1), (0, 1)):
+            nxt = (row + dr, col + dc)
+            if (0 <= nxt[0] < len(grid) and 0 <= nxt[1] < len(grid[0])
+                    and grid[nxt[0]][nxt[1]] == 0 and nxt not in visited):
+                visited.add(nxt)
+                queue.append((nxt, distance + 1))
+    return farthest
 
-    # إرجاع قيم صحيحة للغرفة الأولى لمنع أخطاء كسر المصفوفات الإحداثية
-    player_spawn = (int(rooms[0]['x'] + 2), int(rooms[0]['y'] + 2))
-    
-    chest_positions = []
-    trap_positions = []
-    for room in rooms[1:]:
-        chest_positions.append((room['x'] + room['w'] // 2, room['y'] + room['h'] // 2))
-        trap_positions.append((room['x'] + 1, room['y'] + 1))
-        
-    return grid, player_spawn, chest_positions, trap_positions
+
+def generate_dungeon(rows=21, cols=21):
+    rows, cols = max(9, int(rows)), max(9, int(cols))
+    if rows % 2 == 0:
+        rows += 1
+    if cols % 2 == 0:
+        cols += 1
+    grid = _carve_passages(rows, cols)
+    spawn = (1, 1)
+    exit_cell = _farthest_open(grid, spawn)
+
+    candidates = []
+    for row in range(1, rows - 1):
+        for col in range(1, cols - 1):
+            if grid[row][col] == 0 and (row, col) != spawn:
+                distance = abs(row - spawn[0]) + abs(col - spawn[1])
+                if distance >= 6:
+                    candidates.append((row, col))
+    candidates.sort(
+        key=lambda cell: abs(cell[0] - exit_cell[0]) + abs(cell[1] - exit_cell[1]),
+        reverse=True,
+    )
+    enemies = [(col, row) for row, col in candidates[:2]]
+    chests = [(exit_cell[1], exit_cell[0])]
+    return grid, spawn, enemies, []
