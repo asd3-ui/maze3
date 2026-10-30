@@ -1,8 +1,9 @@
 import sys
 
+from pythonforandroid.logger import shprint
 from pythonforandroid.recipes.pygame import Pygame2Recipe
 from pythonforandroid.toolchain import current_directory
-from sh import Command, shprint
+from sh import Command
 
 
 class Pygame261Recipe(Pygame2Recipe):
@@ -14,8 +15,7 @@ class Pygame261Recipe(Pygame2Recipe):
     def build_compiled_components(self, arch):
         env = self.get_recipe_env(arch)
         with current_directory(self.get_build_dir(arch.arch)):
-            # setup.py cython_only generates src_c/*.c from the bundled
-            # src_c/cython/pygame/*.pyx files, including src_c/_sprite.c.
+            # Generate C sources (including _sprite.c) from bundled .pyx files.
             shprint(Command(sys.executable), "setup.py", "cython_only", _env=env)
         super().build_compiled_components(arch)
 
